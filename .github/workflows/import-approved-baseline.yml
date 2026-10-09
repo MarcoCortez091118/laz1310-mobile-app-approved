@@ -1,0 +1,51 @@
+# One-time import of the original LA Z mobile main tree.
+# This workflow deletes itself when the exact source snapshot is committed.
+name: Import LAZ1310 approved baseline
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/import-approved-baseline.yml
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    name: Copy and verify exact source Git tree
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout empty target baseline
+        uses: actions/checkout@v4
+        with:
+          path: approved
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Checkout pinned original main
+        uses: actions/checkout@v4
+        with:
+          repository: MarcoCortez091118/laz1310-mobile-app
+          ref: ea4b39a1d53409ac99716ba142672c50f5a18260
+          path: source
+          persist-credentials: false
+
+      - name: Replace target content with exact original tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C source rev-parse HEAD)" = "ea4b39a1d53409ac99716ba142672c50f5a18260"
+          git -C approved rm -r --quiet -- .
+          tar --exclude='./.git' -C source -cf - . | tar -C approved -xf -
+          git -C approved add -A
+
+          expected="$(git -C source rev-parse 'HEAD^{tree}')"
+          actual="$(git -C approved write-tree)"
+          printf 'Source Git tree: %s\nTarget Git tree: %s\n' "$expected" "$actual"
+          test "$expected" = "$actual"
+
+          git -C approved -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "chore: approved mobile snapshot of ea4b39a1d53409ac99716ba142672c50f5a18260"
+          git -C approved push origin HEAD:refs/heads/main
